@@ -1,0 +1,21 @@
+{
+  "name": "balcacorp-ems-server",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.js",
+    "seed": "node --env-file-if-exists=.env seed.js",
+    "smoke": "node --env-file-if-exists=.env smoke.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "mongoose": "^8.16.0",
+    "multer": "^2.0.1"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.4"
+  }
+}
