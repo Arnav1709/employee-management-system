@@ -1,35 +1,46 @@
 const express = require('express');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
-const { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, connect, localDate } = require('./models');
+const { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, File, connect, localDate } = require('./models');
+
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
+const DB_NAME = process.env.DB_NAME || 'balcacorp-ems';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
-// ponytail: in-memory session store — a server restart logs everyone out. Swap in connect-mongo if that ever hurts.
 app.use(session({
   secret: process.env.SESSION_SECRET || 'balcacorp-ems',
   resave: false,
   saveUninitialized: false,
+  store: MongoStore.create({ mongoUrl: MONGO_URI, dbName: DB_NAME }),
   cookie: { httpOnly: true, sameSite: 'lax' },
 }));
 
-// --- uploads ---
-const UP = path.join(__dirname, 'uploads');
-fs.mkdirSync(path.join(UP, 'photos'), { recursive: true });
-fs.mkdirSync(path.join(UP, 'docs'), { recursive: true });
+// Serverless hosts (Vercel) cold-start with no DB connection — connect lazily, once.
+let dbReady = null;
+app.use('/api', (req, res, next) => {
+  (dbReady ||= connect()).then(() => next(), (e) => { dbReady = null; next(e); });
+});
+
+// --- uploads (stored in MongoDB — serverless hosts have no persistent disk) ---
 const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, path.join(UP, file.fieldname === 'photo' ? 'photos' : 'docs')),
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname).toLowerCase()}`),
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // ponytail: Vercel caps request bodies at ~4.5 MB, so that is the real ceiling there
   fileFilter: (req, file, cb) => cb(null, ALLOWED.has(path.extname(file.originalname).toLowerCase())),
 });
+
+async function savePhoto(file, oldUrl) {
+  if (oldUrl?.startsWith('/api/files/')) await File.deleteOne({ _id: oldUrl.split('/').pop() }).catch(() => {});
+  const f = await File.create({ data: file.buffer, type: file.mimetype, name: file.originalname, kind: 'photo' });
+  return '/api/files/' + f._id;
+}
 
 // --- helpers ---
 const h = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -46,7 +57,12 @@ const publicEmp = (e) => {
 };
 
 // Photos need a login but not ownership — they appear in admin lists and the employee's own header.
-app.use('/uploads/photos', auth, express.static(path.join(UP, 'photos')));
+// Documents are never served here (kind check): they go through /api/documents/:id/file with an ownership check.
+app.get('/api/files/:id', auth, h(async (req, res) => {
+  const f = await File.findById(req.params.id);
+  if (!f || f.kind !== 'photo') return res.status(404).json({ error: 'Not found' });
+  res.set('Content-Type', f.type).set('Cache-Control', 'private, max-age=3600').send(f.data);
+}));
 
 // --- auth ---
 app.post('/api/login', h(async (req, res) => {
@@ -69,7 +85,7 @@ app.get('/api/me', auth, h(async (req, res) => {
 app.put('/api/me', auth, upload.single('photo'), h(async (req, res) => {
   const u = await Employee.findById(me(req).id);
   if (req.body.phone !== undefined) u.phone = req.body.phone;
-  if (req.file) u.photo = '/uploads/photos/' + req.file.filename;
+  if (req.file) u.photo = await savePhoto(req.file, u.photo);
   await u.save();
   res.json(publicEmp(await u.populate('department', 'name')));
 }));
@@ -100,7 +116,7 @@ app.post('/api/employees', admin, upload.single('photo'), h(async (req, res) => 
   const data = { passwordHash: bcrypt.hashSync(req.body.password, 10) };
   for (const k of EMP_FIELDS) if (req.body[k] !== undefined && req.body[k] !== '') data[k] = req.body[k];
   data.department = req.body.department || null;
-  if (req.file) data.photo = '/uploads/photos/' + req.file.filename;
+  if (req.file) data.photo = await savePhoto(req.file);
   data.empCode = `BAL-${String(await Employee.countDocuments() + 1).padStart(3, '0')}`;
   const e = await Employee.create(data);
   res.json(publicEmp(await e.populate('department', 'name')));
@@ -119,7 +135,7 @@ app.put('/api/employees/:id', admin, upload.single('photo'), h(async (req, res) 
   for (const k of EMP_FIELDS) if (req.body[k] !== undefined && req.body[k] !== '') e[k] = req.body[k];
   if (req.body.department !== undefined) e.department = req.body.department || null;
   if (req.body.password) e.passwordHash = bcrypt.hashSync(req.body.password, 10);
-  if (req.file) e.photo = '/uploads/photos/' + req.file.filename;
+  if (req.file) e.photo = await savePhoto(req.file, e.photo);
   await e.save();
   res.json(publicEmp(await e.populate('department', 'name')));
 }));
@@ -303,7 +319,8 @@ app.get('/api/documents', auth, h(async (req, res) => {
 app.post('/api/documents', admin, upload.single('file'), h(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Attach a JPG, PNG or PDF up to 5 MB' });
   if (!req.body.employee) return res.status(400).json({ error: 'Employee is required' });
-  const d = await Doc.create({ employee: req.body.employee, type: req.body.type || 'other', title: req.body.title || req.file.originalname, file: req.file.filename });
+  const f = await File.create({ data: req.file.buffer, type: req.file.mimetype, name: req.file.originalname, kind: 'doc' });
+  const d = await Doc.create({ employee: req.body.employee, type: req.body.type || 'other', title: req.body.title || req.file.originalname, file: String(f._id) });
   res.json(await d.populate('employee', 'name empCode'));
 }));
 
@@ -311,12 +328,16 @@ app.get('/api/documents/:id/file', auth, h(async (req, res) => {
   const d = await Doc.findById(req.params.id);
   if (!d) return res.status(404).json({ error: 'Document not found' });
   if (me(req).role !== 'admin' && String(d.employee) !== me(req).id) return res.status(403).json({ error: 'Not your document' });
-  res.download(path.join(UP, 'docs', d.file), d.title + path.extname(d.file));
+  const f = await File.findById(d.file);
+  if (!f) return res.status(404).json({ error: 'File is missing' });
+  res.set('Content-Type', f.type)
+    .set('Content-Disposition', `attachment; filename="${d.title.replace(/"/g, '')}${path.extname(f.name)}"`)
+    .send(f.data);
 }));
 
 app.delete('/api/documents/:id', admin, h(async (req, res) => {
   const d = await Doc.findByIdAndDelete(req.params.id);
-  if (d) fs.rm(path.join(UP, 'docs', d.file), { force: true }, () => {});
+  if (d) await File.deleteOne({ _id: d.file }).catch(() => {});
   res.json({ ok: true });
 }));
 
@@ -391,13 +412,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Server error' });
 });
 
-connect()
-  .then((dbName) => {
-    const port = process.env.PORT || 3001;
-    app.listen(port, () => console.log(`EMS server on http://localhost:${port} (db: ${dbName})`));
-  })
-  .catch((e) => {
-    console.error('Could not connect to MongoDB:', e.message);
-    console.error('Set MONGO_URI in server/.env and try again.');
-    process.exit(1);
-  });
+module.exports = { app };
+
+if (require.main === module) {
+  (dbReady ||= connect())
+    .then(() => {
+      const port = process.env.PORT || 3001;
+      app.listen(port, () => console.log(`EMS server on http://localhost:${port} (db: ${DB_NAME})`));
+    })
+    .catch((e) => {
+      console.error('Could not connect to MongoDB:', e.message);
+      console.error('Set MONGO_URI in server/.env and try again.');
+      process.exit(1);
+    });
+}

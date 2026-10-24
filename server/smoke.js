@@ -92,7 +92,8 @@ async function main() {
     const created = await call('admin', 'POST', '/api/employees', form);
     assert.equal(created.status, 200);
     assert.match(created.data.empCode, /^BAL-\d{3}$/);
-    assert.match(created.data.photo, /^\/uploads\/photos\//);
+    assert.match(created.data.photo, /^\/api\/files\//);
+    assert.equal((await call('yash', 'GET', created.data.photo)).status, 200);
     assert.equal((await call('test', 'POST', '/api/login', { email: 'test@balcacorp.com', password: 'secret1' })).status, 200);
     ok('admin creates employee (with photo) who can log in');
     assert.equal((await call('admin', 'POST', '/api/employees', form)).status, 400);

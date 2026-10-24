@@ -5,10 +5,12 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env index.js",
     "seed": "node --env-file-if-exists=.env seed.js",
+    "reset": "node --env-file-if-exists=.env seed.js --clean",
     "smoke": "node --env-file-if-exists=.env smoke.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "connect-mongo": "^5.1.0",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-session": "^1.18.1",

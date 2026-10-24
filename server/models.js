@@ -66,6 +66,14 @@ const Doc = model('Document', new Schema({
   file: { type: String, required: true },
 }, { timestamps: true }));
 
+// Uploaded files live in MongoDB so the app works on serverless hosts with no disk.
+const File = model('File', new Schema({
+  data: { type: Buffer, required: true },
+  type: { type: String, required: true }, // mime type
+  name: { type: String, default: '' },
+  kind: { type: String, enum: ['photo', 'doc'], required: true },
+}));
+
 const ratingSchema = new Schema({
   employee: { ...ref('Employee'), required: true },
   month: { type: String, required: true }, // YYYY-MM
@@ -82,4 +90,4 @@ async function connect() {
   return dbName;
 }
 
-module.exports = { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, connect, localDate };
+module.exports = { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, File, connect, localDate };

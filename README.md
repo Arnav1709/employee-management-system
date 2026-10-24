@@ -35,6 +35,15 @@ Two terminals:
 - `cd server && npm start` (API on :3001)
 - `cd client && npm run dev` (Vite on :5173, proxies /api)
 
+## Deployment (Vercel)
+
+Live at https://balcacorp.vercel.app — the Express app runs as a serverless function ([api/index.js](api/index.js)),
+sessions and uploaded files are stored in MongoDB, and the React build is served as static files.
+To redeploy after changes: `vercel deploy --prod --yes`. Environment variables (`MONGO_URI`, `SESSION_SECRET`)
+are set in the Vercel project. Note: uploads are limited to ~4.5 MB on Vercel.
+
+`npm run reset` (in `server/`) wipes the database to just the admin + 4 departments — no demo data.
+
 ## Tests
 
 `cd server && npm run smoke` — end-to-end API check against a throwaway database

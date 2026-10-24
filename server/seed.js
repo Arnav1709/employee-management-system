@@ -1,7 +1,9 @@
 // Wipes the database and loads demo data. Run: npm run seed
+// With --clean (npm run reset): wipes everything and creates ONLY the admin + departments, no fake data.
+const CLEAN = process.argv.includes('--clean');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, connect, localDate } = require('./models');
+const { Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, File, connect, localDate } = require('./models');
 
 const day = (offset) => { // YYYY-MM-DD for today + offset days
   const d = new Date();
@@ -11,7 +13,8 @@ const day = (offset) => { // YYYY-MM-DD for today + offset days
 
 async function seed() {
   const dbName = await connect();
-  await Promise.all([Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating].map(m => m.deleteMany({})));
+  await Promise.all([Department, Employee, Attendance, Task, Leave, Announcement, Doc, Rating, File].map(m => m.deleteMany({})));
+  await mongoose.connection.db.collection('sessions').deleteMany({}).catch(() => {});
 
   const hash = (p) => bcrypt.hashSync(p, 10);
   const admin = await Employee.create({
@@ -21,6 +24,13 @@ async function seed() {
 
   const depts = {};
   for (const name of ['Development', 'HR', 'Sales', 'Marketing']) depts[name] = await Department.create({ name });
+
+  if (CLEAN) {
+    console.log(`Reset database "${dbName}": admin + 4 departments only, no demo data.
+  admin login -> admin@balcacorp.com / admin123 (change this after logging in)`);
+    await mongoose.disconnect();
+    return;
+  }
 
   const people = [
     ['Yash Agarwal', 'Development', 'Full Stack Developer'],
