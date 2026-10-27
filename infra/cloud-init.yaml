@@ -1,0 +1,78 @@
+#cloud-config
+# First-boot setup for the EMS VM. deploy.sh fills in __KEYVAULT__ and __FQDN__.
+package_update: true
+packages: [nginx, certbot, python3-certbot-nginx, curl]
+
+write_files:
+  - path: /etc/ems/keyvault
+    content: "__KEYVAULT__\n"
+
+  # Fetches secrets from Key Vault with the VM's managed identity and starts the app with them.
+  # Secrets live only in the process environment, never on disk.
+  - path: /usr/local/bin/ems-run
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env python3
+      import json, os, urllib.request
+
+      KV = open('/etc/ems/keyvault').read().strip()
+
+      def get(url, headers):
+          return json.load(urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10))
+
+      token = get('http://169.254.169.254/metadata/identity/oauth2/token'
+                  '?api-version=2018-02-01&resource=https://vault.azure.net', {'Metadata': 'true'})['access_token']
+      secret = lambda name: get(f'https://{KV}.vault.azure.net/secrets/{name}?api-version=7.4',
+                                {'Authorization': 'Bearer ' + token})['value']
+      env = dict(os.environ, MONGO_URI=secret('mongo-uri'), SESSION_SECRET=secret('session-secret'), PORT='3001')
+      os.execvpe('node', ['node', 'index.js'], env)
+
+  - path: /etc/systemd/system/ems.service
+    content: |
+      [Unit]
+      Description=Employee Management System
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=ems
+      WorkingDirectory=/opt/ems/server
+      ExecStart=/usr/local/bin/ems-run
+      Restart=always
+      RestartSec=5
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ReadWritePaths=/opt/ems
+      PrivateTmp=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/nginx/sites-available/ems
+    content: |
+      server {
+        listen 80;
+        server_name __FQDN__;
+        client_max_body_size 6m;
+        location / {
+          proxy_pass http://127.0.0.1:3001;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+
+runcmd:
+  # 2 GB swap: the VM has 1 GB RAM, not enough for the Vite build on its own
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - useradd --system --create-home --shell /usr/sbin/nologin ems
+  - mkdir -p /opt/ems && chown ems:ems /opt/ems
+  - rm -f /etc/nginx/sites-enabled/default
+  - ln -s /etc/nginx/sites-available/ems /etc/nginx/sites-enabled/ems
+  - systemctl reload nginx
+  - systemctl daemon-reload
+  - systemctl enable ems
