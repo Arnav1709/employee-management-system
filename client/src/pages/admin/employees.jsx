@@ -82,7 +82,7 @@ export default function Employees() {
     if (status) p.set('status', status);
     get('/employees?' + p).then(setList).catch(() => {});
   };
-  useEffect(load, [q, dept, status]);
+  useEffect(() => { load(); }, [q, dept, status]);
   useEffect(() => { get('/departments').then(setDepts).catch(() => {}); }, []);
 
   return (

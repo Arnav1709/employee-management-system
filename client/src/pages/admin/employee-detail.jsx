@@ -25,7 +25,7 @@ export default function EmployeeDetail() {
     get('/documents?employee=' + id).then(setDocs).catch(() => {});
     get('/ratings?employee=' + id).then(setRatings).catch(() => {});
   };
-  useEffect(load, [id]);
+  useEffect(() => { load(); }, [id]);
   useEffect(() => {
     get(`/performance?employee=${id}&month=${month}`).then((p) => {
       setPerf(p);

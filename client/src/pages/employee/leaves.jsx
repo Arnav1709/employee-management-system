@@ -13,7 +13,7 @@ export default function MyLeaves() {
     get('/leaves/balance').then(setBalance).catch(() => {});
     get('/leaves').then(setLeaves).catch(() => {});
   };
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const apply = async (e) => {
     e.preventDefault();

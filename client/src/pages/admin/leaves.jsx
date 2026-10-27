@@ -5,7 +5,7 @@ import { Badge, Empty, fmt } from '../../ui';
 export default function LeavesAdmin() {
   const [leaves, setLeaves] = useState(null);
   const load = () => get('/leaves').then(setLeaves).catch(() => {});
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const decide = async (l, status) => {
     let adminNote = '';

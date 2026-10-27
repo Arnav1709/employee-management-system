@@ -14,7 +14,7 @@ export default function TasksAdmin() {
 
   const qs = new URLSearchParams(Object.entries(filter).filter(([, v]) => v)).toString();
   const load = () => get('/tasks?' + qs).then(setTasks).catch(() => {});
-  useEffect(load, [qs]);
+  useEffect(() => { load(); }, [qs]);
   useEffect(() => { get('/employees?status=active').then(setEmps).catch(() => {}); }, []);
 
   const create = async (e) => {

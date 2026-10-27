@@ -8,7 +8,7 @@ export default function Announcements() {
   const [editId, setEditId] = useState(null);
   const [err, setErr] = useState('');
   const load = () => get('/announcements').then(setList).catch(() => {});
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const submit = async (e) => {
     e.preventDefault();

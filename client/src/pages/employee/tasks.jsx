@@ -7,7 +7,7 @@ const STATUSES = [['todo', 'To Do'], ['in_progress', 'In Progress'], ['completed
 export default function MyTasks() {
   const [tasks, setTasks] = useState(null);
   const load = () => get('/tasks').then(setTasks).catch(() => {});
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const setStatus = async (t, status) => { await put('/tasks/' + t._id, { status }); load(); };
 
