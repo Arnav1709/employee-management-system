@@ -35,12 +35,11 @@ Two terminals:
 - `cd server && npm start` (API on :3001)
 - `cd client && npm run dev` (Vite on :5173, proxies /api)
 
-## Deployment (Vercel)
+## Deployment
 
-Live at https://balcacorp.vercel.app — the Express app runs as a serverless function ([api/index.js](api/index.js)),
-sessions and uploaded files are stored in MongoDB, and the React build is served as static files.
-To redeploy after changes: `vercel deploy --prod --yes`. Environment variables (`MONGO_URI`, `SESSION_SECRET`)
-are set in the Vercel project. Note: uploads are limited to ~4.5 MB on Vercel.
+Any Node 22.9+ host (Render, Railway, a VPS, …): build command `npm run build`, start command `npm start`,
+both from the repo root. Set `MONGO_URI` and `SESSION_SECRET` as environment variables; the host's `PORT`
+is picked up automatically. Sessions and uploaded files are stored in MongoDB, so no persistent disk is needed.
 
 `npm run reset` (in `server/`) wipes the database to just the admin + 4 departments — no demo data.
 

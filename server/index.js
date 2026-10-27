@@ -22,7 +22,7 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax' },
 }));
 
-// Serverless hosts (Vercel) cold-start with no DB connection — connect lazily, once.
+// Serverless hosts cold-start with no DB connection — connect lazily, once.
 let dbReady = null;
 app.use('/api', (req, res, next) => {
   (dbReady ||= connect()).then(() => next(), (e) => { dbReady = null; next(e); });
@@ -32,7 +32,7 @@ app.use('/api', (req, res, next) => {
 const ALLOWED = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // ponytail: Vercel caps request bodies at ~4.5 MB, so that is the real ceiling there
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, ALLOWED.has(path.extname(file.originalname).toLowerCase())),
 });
 
